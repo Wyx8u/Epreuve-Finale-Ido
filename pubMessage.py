@@ -3,6 +3,10 @@ import time
 import board
 import adafruit_dht
 import socket
+import pigpio
+
+pi = pigpio.pi()        
+BTN = 16
 
 hostname =socket.gethostname()
 
@@ -46,5 +50,7 @@ while True:
     except Exception as error:
         sensor.exit()
         raise error
+    except KeyboardInterrupt:
+        exit
 
-    time.sleep(3)
+    time.sleep(3) # METTRE A 30
