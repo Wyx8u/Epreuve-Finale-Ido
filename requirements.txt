@@ -1,0 +1,2 @@
+pip install adafruit-circuitpython-dht
+pip install paho-mqtt
