@@ -10,6 +10,8 @@ BTN = 16
 W = 21
 
 sendingData = False
+press_duration = 0
+pi.write(W, 0)
 
 hostname =socket.gethostname()
 
@@ -31,26 +33,8 @@ def connexion(client, userdata, flags, code, properties):
 # Marc-Antoine
 while True:
     try:
-
-        if sendingData == True:
-            pi.write(W, 1)
-        else:
-            pi.write(W, 0)
-
-        # Print the values to the serial port
         temperature_c = sensor.temperature
         humidity = sensor.humidity
-
-        p_temperature = "Temp:{0:0.1f}ºC".format(temperature_c)
-        p_humidity = "Humidity:{0:0.1f}%".format(humidity)
-
-        client = pmc.Client(pmc.CallbackAPIVersion.VERSION2)
-        client.on_connect = connexion
-        client.connect(BROKER,PORT)
-
-        client.publish(TOPIC_HUMIDITY, p_humidity)
-        client.publish(TOPIC_TEMPERATURE, p_temperature)
-
     except RuntimeError as error:
         # Errors happen fairly often, DHT's are hard to read, just keep going
         print(error.args[0])
@@ -62,4 +46,32 @@ while True:
     except KeyboardInterrupt:
         exit
 
-    time.sleep(10) # METTRE A 30
+    client = pmc.Client(pmc.CallbackAPIVersion.VERSION2)
+    client.on_connect = connexion
+    client.connect(BROKER,PORT)
+
+    p_temperature = int("{0:0.0f}".format(temperature_c))
+    p_humidity = int("{0:0.0f}".format(humidity))
+
+    if pi.read(BTN) == 0:
+        start_time = time.time()
+        while pi.read(BTN) == 0:
+            time.sleep(0.1)
+            press_duration = time.time() - start_time
+            print(press_duration)
+
+    if press_duration > 1:
+        if sendingData == False:
+            sendingData = True
+        else:
+            sendingData = False
+
+    if press_duration < 2:
+        client.publish(TOPIC_HUMIDITY, p_humidity)
+        client.publish(TOPIC_TEMPERATURE, p_temperature)
+
+    while sendingData:
+        pi.write(W, 1)
+        client.publish(TOPIC_HUMIDITY, p_humidity)
+        client.publish(TOPIC_TEMPERATURE, p_temperature)
+        time.sleep(10) # METTRE A 30
