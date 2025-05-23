@@ -1,75 +1,72 @@
 import paho.mqtt.client as pmc
 import pigpio
-import time
 import socket
 
-pi = pigpio.pi()        
-R = 20
-B = 19
+# GPIO setup
+pi = pigpio.pi()
+RED_LED = 20   
+BLUE_LED = 19  
 
+# MQTT broker configuration
 BROKER = "10.10.1.151"
 PORT = 1883
-TOPIC = "final/#"
+TOPIC = "final/#" 
 
-donneesRecuesT = {}
-donneesRecuesH = {}
+# Dictionaries to store the latest values per host
+receivedTemps = {}
+receivedHums = {}
 
-max_hum_host = ''
+# Hostnames with the highest values
 max_temp_host = ''
+max_hum_host = ''
 
-def connexion(client, userdata, flags, code, properties):
-    if code == 0:
-        print("Connecté")
-    else:
-        print("Erreur code %d\n", code)
+# Called when the MQTT client connects to the broker
+def on_connect(client, userdata, flags, code, properties):
+   if code == 0:
+       print("Connected to MQTT broker")
+   else:
+       print(f"Connection failed, code {code}")
 
-#Marc-Antoine
-def reception_msg(cl,userdata,msg):
-    global max_hum_host, max_temp_host, donneesRecuesH, donneesRecuesT
-    
-    # Gestion du topic H ou T
-    if msg.topic.split("/")[2] == "T":
-        #print("Reçu:",msg.payload.decode(), "Host:", msg.topic.split("/")[1])
-        try:
-            cle = msg.topic.split("/")[1]
-            donneesRecuesT[cle] = int((msg.payload.decode()))
-            print("Topic Temp", donneesRecuesT)
-        except IndexError: # Cas si un topic ne contient pas de "/"
-            print(">>> ERREUR:",msg.topic,msg.payload.decode())
-        except ValueError: # Cas si le message MQTT n'est pas un nombre
-            print(">>> ERREUR:",msg.topic,msg.payload.decode())
+# Called whenever a message is received on a subscribed topic
+def on_message(client, userdata, msg):
+   global max_temp_host, max_hum_host, receivedTemps, receivedHums
+   try:
+       parts = msg.topic.split("/")
+       host = parts[1]
+       sensor_type = parts[2]
+       value = int(msg.payload.decode())
+   except (IndexError, ValueError):
+       print(">>> ERROR processing message:", msg.topic, msg.payload.decode())
+       return
+   
+   # Handle temperature data
+   if sensor_type == "T":
+       receivedTemps[host] = value
+       print("Received Temperature Data:", receivedTemps)
+       # Find the host with the highest temperature
+       max_temp_host = max(receivedTemps, key=receivedTemps.get)
+       print("Current Max Temp Host:", max_temp_host)
+       # Turn on red LED only if this device has the max temperature
+       pi.write(RED_LED, 1 if max_temp_host == socket.gethostname() else 0)
 
-        max_temp_host = max(donneesRecuesT, key=donneesRecuesT.get)
-        print(max_temp_host)
+   # Handle humidity data
+   elif sensor_type == "H":
+       receivedHums[host] = value
+       print("Received Humidity Data:", receivedHums)
+       # Find the host with the highest humidity
+       max_hum_host = max(receivedHums, key=receivedHums.get)
+       print("Current Max Humidity Host:", max_hum_host)
+       # Turn on blue LED only if this device has the max humidity
+       pi.write(BLUE_LED, 1 if max_hum_host == socket.gethostname() else 0)
 
-        if max_temp_host == socket.gethostname():
-            pi.write(R, 1)
-        else:
-            pi.write(R, 0)
-
-    elif msg.topic.split("/")[2] == "H":
-        #print("Reçu:",msg.payload.decode(), "Host:", msg.topic.split("/")[1])
-        try:
-            cle = msg.topic.split("/")[1]
-            donneesRecuesH[cle] = int((msg.payload.decode()))
-            print("Topic Humidity", donneesRecuesH)
-        except IndexError: # Cas si un topic ne contient pas de "/"
-            print(">>> ERREUR:",msg.topic,msg.payload.decode())
-        except ValueError: # Cas si le message MQTT n'est pas un nombre
-            print(">>> ERREUR:",msg.topic,msg.payload.decode())
-
-        max_hum_host = max(donneesRecuesH, key=donneesRecuesH.get)
-        print(max_hum_host)
-
-        if max_hum_host == socket.gethostname():
-            pi.write(B, 1)
-        else:
-            pi.write(B, 0)
-
+# MQTT client setup
 client = pmc.Client(pmc.CallbackAPIVersion.VERSION2)
-client.on_connect = connexion
-client.on_message = reception_msg
+client.on_connect = on_connect
+client.on_message = on_message
 
-client.connect(BROKER,PORT)
+# Connect and subscribe to the broker
+client.connect(BROKER, PORT)
 client.subscribe(TOPIC)
+
+# Start the MQTT loop
 client.loop_forever()
